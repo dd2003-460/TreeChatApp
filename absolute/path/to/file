@@ -1,0 +1,163 @@
+import tkinter.ttk as ttk
+from core.ai_model import AIModel
+
+class AIModel:
+    def __init__(self, model_name="llama3"):
+        # 初始化 AI 模型
+        self.model_name = model_name
+        try:
+            import ollama
+            self.ollama = ollama
+            self.use_ollama = True
+        except ImportError:
+            self.ollama = None
+            self.use_ollama = False
+            print("Ollama库未安装，将使用模拟回复")
+
+    def set_model(self, model_name):
+        """设置要使用的AI模型"""
+        self.model_name = model_name
+
+    def get_available_models(self):
+        """获取本地可用的模型列表"""
+        if self.use_ollama:
+            try:
+                models = self.ollama.list()
+                return [model['name'] for model in models['models']]
+            except Exception as e:
+                print(f"获取模型列表时出错: {e}")
+                return []
+        else:
+            return ["llama3", "mistral", "neural-chat"]  # 模拟模型列表
+
+    def generate_response(self, input_text):
+        """
+        根据输入文本生成回复
+
+        参数:
+            input_text - 用户输入的文本
+
+        返回:
+            AI 模型生成的回复文本
+        """
+        if self.use_ollama:
+            try:
+                response = self.ollama.generate(model=self.model_name, prompt=input_text)
+                return response['response']
+            except Exception as e:
+                return f"AI 回应出错: {e}"
+        else:
+            return f"AI 回应: {input_text}"
+
+    def get_reply(self, input_text):
+        """获取AI回复的包装方法"""
+        return self.generate_response(input_text)
+
+[设置]
+auto_switch_to_new_node = True
+auto_save_chat = False
+records_folder = records
+show_jump_alert = True
+show_save_alert = True
+clear_on_jump = True
+send_shortcut = Control-Enter
+save_shortcut = Control-s
+new_chat_shortcut = Control-n
+open_shortcut = Control-o
+chat_font = Microsoft YaHei UI,10
+input_font = Microsoft YaHei UI,10
+chat_font_size = 10
+input_font_size = 10
+try:
+    self.input_font_size = config.getint('设置', 'input_font_size')
+except Exception:
+    self.input_font_size = 10
+
+# 尝试从配置文件加载AI模型设置
+try:
+    self.ai_model_name = config.get('设置', 'ai_model')
+except Exception:
+    self.ai_model_name = "llama3"
+
+# 确保记录文件夹存在
+if not os.path.exists(self.records_folder):
+    os.makedirs(self.records_folder)
+
+# 初始化节点树和 AI 模型
+self.tree = Tree()
+self.ai_model = AIModel(self.ai_model_name)
+
+    def open_settings_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("设置")
+        dialog.geometry("400x500")  # 增加高度以容纳新设置
+        dialog.resizable(False, False)
+        
+        # 添加字体设置区域
+        font_frame = ttk.LabelFrame(dialog, text="字体设置")
+        font_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
+        
+        # 添加AI模型设置区域
+        ai_frame = ttk.LabelFrame(dialog, text="AI模型设置")
+        ai_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
+        
+        # AI模型选择
+        ttk.Label(ai_frame, text="选择AI模型:").pack(anchor='w', padx=10, pady=5)
+        
+        # 获取可用模型列表
+        available_models = self.ai_model.get_available_models()
+        if not available_models:
+            available_models = [self.ai_model_name]
+        
+        ai_model_var = tk.StringVar(value=self.ai_model_name)
+        model_combobox = ttk.Combobox(ai_frame, textvariable=ai_model_var, values=available_models, state="readonly")
+        model_combobox.pack(anchor='w', padx=10, pady=5)
+        
+        # 刷新模型列表按钮
+        def refresh_models():
+            models = self.ai_model.get_available_models()
+            model_combobox['values'] = models if models else [self.ai_model_name]
+        
+        refresh_button = ttk.Button(ai_frame, text="刷新模型列表", command=refresh_models)
+        refresh_button.pack(anchor='w', padx=10, pady=5)
+        
+        # 保存设置按钮
+        def save_settings():
+            # 更新AI模型设置
+            self.ai_model_name = ai_model_var.get()
+            self.ai_model.set_model(self.ai_model_name)
+
+            config = configparser.ConfigParser()
+            config.read(os.path.join("config", "settings.ini"), encoding="utf-8")
+            config.set('设置', 'ai_model', self.ai_model_name)
+            
+            # 尝试从配置文件加载字体设置
+            # 尝试从配置文件加载字体设置
+            try:
+                chat_font_str = config.get('设置', 'chat_font')
+                font_parts = chat_font_str.split(',')
+                self.chat_font = (font_parts[0], int(font_parts[1]))
+            except Exception:
+                # 若配置文件中没有 chat_font，则使用 chat_font_size 或默认值
+                try:
+                    chat_font_size = config.getint('设置', 'chat_font_size')
+                except Exception:
+                    chat_font_size = 10
+                self.chat_font = ('Microsoft YaHei UI', chat_font_size)
+            
+            try:
+                input_font_str = config.get('设置', 'input_font')
+                font_parts = input_font_str.split(',')
+                self.input_font = (font_parts[0], int(font_parts[1]))
+            except Exception:
+                # 若配置文件中没有 input_font，则使用 input_font_size 或默认值
+                try:
+                    input_font_size = config.getint('设置', 'input_font_size')
+                except Exception:
+                    input_font_size = 10
+                self.input_font = ('Microsoft YaHei UI', input_font_size)
+            
+            dialog.destroy()
+
+        save_button = ttk.Button(dialog, text="保存设置", command=save_settings, style='TButton')
+        save_button.pack(pady=10)
