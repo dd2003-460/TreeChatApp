@@ -63,6 +63,7 @@
 ---
 
 ## 六、License
-MIT © 2025 YourName  
+MIT © 2025 yifeng xiao
 > 如果你觉得“文件夹式聊天”有道理，请点个 ⭐ 让更多人看见！
 ```
+
