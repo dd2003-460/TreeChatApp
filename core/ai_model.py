@@ -58,6 +58,7 @@ class AIModel:
                         self.available_models.append(model.name)
             
             logger.info(f"成功加载 {len(self.available_models)} 个模型")
+            return True
         except Exception as e:
             logger.error(f"加载模型列表失败: {str(e)}")
             # 不自动执行测试，而是让用户通过UI手动刷新或测试
@@ -65,6 +66,7 @@ class AIModel:
             # 保留一个默认模型以确保基本功能可用
             if not self.available_models:
                 self.available_models.append(self.model)
+            return False
 
     def _test_available_models(self):
         """测试多个已知模型的可用性（现在只有在手动调用时才执行）"""
@@ -130,6 +132,11 @@ class AIModel:
     
     def set_model(self, model_name):
         """设置当前使用的模型"""
+        # 如果模型名称为空，返回False
+        if not model_name:
+            logger.error("模型名称不能为空")
+            return False
+            
         # 检查模型是否在可用列表中或直接测试
         if model_name in self.available_models or self.add_model_manually(model_name):
             self.model = model_name

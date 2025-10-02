@@ -1,8 +1,29 @@
-import tkinter as tk
-from tkinter import scrolledtext, ttk, simpledialog, filedialog, messagebox
+try:
+    import customtkinter as ctk
+    from customtkinter import CTkFrame, CTkButton, CTkLabel, CTkTextbox, CTkPanedWindow
+    # 注意：CustomTkinter没有CTkMenu组件，使用标准tkinter的Menu
+    from tkinter import Menu as CTkMenu
+    USE_CUSTOMTKINTER = True
+except ImportError:
+    import tkinter as tk
+    from tkinter import ttk, scrolledtext, simpledialog, filedialog, messagebox, Menu
+    ctk = tk
+    CTkFrame = tk.Frame
+    CTkButton = tk.Button
+    CTkLabel = tk.Label
+    CTkTextbox = tk.Text
+    CTkMenu = Menu
+    CTkPanedWindow = ttk.PanedWindow
+    USE_CUSTOMTKINTER = False
+
 import configparser
 import os, json, time
 import logging
+try:
+    from appdirs import user_data_dir
+    USE_APPDIRS = True
+except ImportError:
+    USE_APPDIRS = False
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -10,19 +31,21 @@ logger = logging.getLogger(__name__)
 
 from core.tree import Tree, TreeNode
 from core.ai_model import AIModel
+from config.shortcuts import INPUT_SHORTCUTS, MAIN_SHORTCUTS, CHAT_SHORTCUTS
 
 class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("TreeChat")
+        self.root.geometry("2400x2000")  # 设置窗口大小
         
         # 添加字体和样式设置
-        self.font = ('Microsoft YaHei UI', 10)
+        self.font = ('Microsoft YaHei UI', 15)
         
         # 先加载配置文件和基础设置
         # ------------------------ 顶部菜单栏 ------------------------
-        menubar = tk.Menu(self.root, font=('Microsoft YaHei UI', 10))
-        file_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei UI', 10))
+        menubar = tk.Menu(self.root, font=('Microsoft YaHei UI', 15))
+        file_menu = tk.Menu(menubar, tearoff=0, font=('Microsoft YaHei UI', 15))
         file_menu.add_command(label="新建聊天", command=self.new_chat_record)
         file_menu.add_command(label="打开历史聊天记录", command=self.open_chat_records)
         file_menu.add_command(label="保存聊天记录", command=self.save_chat_records)
@@ -32,13 +55,43 @@ class MainWindow:
         menubar.add_cascade(label="文件", menu=file_menu)
         self.root.config(menu=menubar)
 
-        # ------------------------ 顶部设置按钮 ------------------------
-        self.settings_button = ttk.Button(self.root, text="设置", command=self.open_settings_dialog, style='TButton')
+        # 设置按钮字体大小，默认为20
+        settings_button_font = (self.font[0], 20) if hasattr(self, 'font') else ('Microsoft YaHei UI', 20)
+        
+        if USE_CUSTOMTKINTER:
+            self.settings_button = ctk.CTkButton(self.root, text="设置", command=self.open_settings_dialog, 
+                                                corner_radius=10, fg_color="#3B8ED0", hover_color="#3671A2",
+                                                font=settings_button_font)
+        else:
+            self.settings_button = tk.Button(self.root, text="设置", command=self.open_settings_dialog, font=settings_button_font)
         self.settings_button.pack(anchor="nw", padx=5, pady=5)
 
+        # 获取配置文件路径
+        if USE_APPDIRS:
+            # 使用用户数据目录存储配置
+            app_data_dir = user_data_dir("TreeChat", "TreeChat")
+            config_path = os.path.join(app_data_dir, "settings.ini")
+            # 确保目录存在
+            os.makedirs(app_data_dir, exist_ok=True)
+            # 如果用户数据目录中没有配置文件，从程序目录复制
+            if not os.path.exists(config_path):
+                try:
+                    # 尝试从程序目录复制配置文件
+                    default_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "settings.ini")
+                    if os.path.exists(default_config_path):
+                        import shutil
+                        shutil.copy2(default_config_path, config_path)
+                except Exception as e:
+                    logger.warning(f"无法复制默认配置文件: {e}")
+        else:
+            # 使用程序目录中的配置文件
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "settings.ini")
+        
+        logger.info(f"配置文件路径: {config_path}")
+        
         # 加载配置文件，指定编码为 utf-8 避免 UnicodeDecodeError
         config = configparser.ConfigParser()
-        config.read(os.path.join("config", "settings.ini"), encoding="utf-8")
+        config.read(config_path, encoding="utf-8")
         try:
             self.auto_switch = config.getboolean('设置', 'auto_switch_to_new_node')
         except Exception:
@@ -50,7 +103,11 @@ class MainWindow:
         try:
             self.records_folder = config.get('设置', 'records_folder')
         except Exception:
-            self.records_folder = "records"
+            # 使用用户数据目录存储记录
+            if USE_APPDIRS:
+                self.records_folder = os.path.join(user_data_dir("TreeChat", "TreeChat"), "records")
+            else:
+                self.records_folder = "records"
         try:
             self.show_jump_alert = config.getboolean('设置', 'show_jump_alert')
         except Exception:
@@ -92,10 +149,30 @@ class MainWindow:
             self.input_font = (font_parts[0], int(font_parts[1]))
         except Exception:
             self.input_font = ('Microsoft YaHei UI', 10)
+        try:
+            self.button_font_size = config.getint('设置', 'button_font_size')
+        except Exception:
+            self.button_font_size = 10  # 默认按钮字体大小
+        try:
+            self.button_size = config.getint('设置', 'button_size')
+        except Exception:
+            self.button_size = 80  # 默认按钮大小
+        try:
+            self.global_font_size = config.getint('设置', 'global_font_size')
+        except Exception:
+            self.global_font_size = 10  # 默认全局字体大小
 
         # 确保记录文件夹存在
-        if not os.path.exists(self.records_folder):
-            os.makedirs(self.records_folder)
+        try:
+            if not os.path.exists(self.records_folder):
+                os.makedirs(self.records_folder)
+                logger.info(f"创建记录文件夹: {self.records_folder}")
+        except Exception as e:
+            logger.error(f"创建记录文件夹失败: {e}")
+            # 如果无法创建用户数据目录，回退到程序目录
+            self.records_folder = "records"
+            if not os.path.exists(self.records_folder):
+                os.makedirs(self.records_folder)
 
         # 初始化节点树和 AI 模型
         self.tree = Tree()
@@ -106,20 +183,29 @@ class MainWindow:
         self.load_ai_model_settings()
         
         # 创建水平分隔的 PanedWindow
-        self.paned_window = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        self.paned_window.pack(fill=tk.BOTH, expand=1)
+        if USE_CUSTOMTKINTER:
+            self.paned_window = ctk.CTkPanedWindow(self.root, orientation="horizontal")
+        else:
+            self.paned_window = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill="both", expand=True)
 
         # 左侧区域：节点树显示
-        self.tree_frame = ttk.Frame(self.paned_window, width=200)
+        if USE_CUSTOMTKINTER:
+            self.tree_frame = ctk.CTkFrame(self.paned_window, width=200, corner_radius=10)
+        else:
+            self.tree_frame = ttk.Frame(self.paned_window, width=200)
         self.paned_window.add(self.tree_frame, weight=1)
 
         # 右侧区域：聊天区域
-        self.chat_frame = ttk.Frame(self.paned_window)
+        if USE_CUSTOMTKINTER:
+            self.chat_frame = ctk.CTkFrame(self.paned_window, corner_radius=10)
+        else:
+            self.chat_frame = ttk.Frame(self.paned_window)
         self.paned_window.add(self.chat_frame, weight=3)
 
         # 构造左侧树形组件
-        self.tree_display = ttk.Treeview(self.tree_frame, style='Treeview')
-        self.tree_display.pack(fill=tk.BOTH, expand=1)
+        self.tree_display = ttk.Treeview(self.tree_frame)
+        self.tree_display.pack(fill="both", expand=True, padx=10, pady=10)
         self.tree_display.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.tree_display.bind("<Button-3>", self.show_menu)
 
@@ -131,37 +217,71 @@ class MainWindow:
         self.menu.add_command(label="查看主题", command=self.show_topic)
 
         # 构造右侧聊天记录组件
-        self.output_text = scrolledtext.ScrolledText(self.chat_frame, height=15, font=self.chat_font)
-        self.output_text.pack(fill=tk.BOTH, expand=1)
+        if USE_CUSTOMTKINTER:
+            self.output_text = ctk.CTkTextbox(self.chat_frame, height=15, font=self.chat_font, wrap="word")
+        else:
+            self.output_text = scrolledtext.ScrolledText(self.chat_frame, height=15, font=self.chat_font)
+        self.output_text.pack(fill="both", expand=True, padx=10, pady=10)
         self.output_text.bind("<Button-3>", self.show_chat_menu)
         self.chat_menu = tk.Menu(self.root, tearoff=0)
         self.chat_menu.add_command(label="从选中内容创建子节点", command=self.create_node_from_selection)
 
         # 构造聊天输入区：标签、输入框、发送按钮、保存记录按钮
-        self.input_frame = tk.Frame(self.chat_frame)
-        self.input_frame.pack(fill=tk.X)
-        self.input_label = tk.Label(self.input_frame, text="输入:", font=self.input_font)
-        self.input_label.pack(side=tk.LEFT)
-        self.input_text = tk.Entry(self.input_frame, font=self.input_font)
-        self.input_text.pack(side=tk.LEFT, fill=tk.X, expand=1)
-        self.send_button = tk.Button(self.input_frame, text="发送", command=self.send_message, font=self.input_font)
-        self.send_button.pack(side=tk.LEFT)
-        self.save_button = tk.Button(self.input_frame, text="保存记录", command=self.save_chat_records, font=self.input_font)
-        self.save_button.pack(side=tk.LEFT)
+        if USE_CUSTOMTKINTER:
+            self.input_frame = ctk.CTkFrame(self.chat_frame, corner_radius=10)
+        else:
+            self.input_frame = tk.Frame(self.chat_frame)
+        self.input_frame.pack(fill="x", padx=10, pady=10)
+        
+        if USE_CUSTOMTKINTER:
+            self.input_label = ctk.CTkLabel(self.input_frame, text="输入:", font=self.input_font)
+        else:
+            self.input_label = tk.Label(self.input_frame, text="输入:", font=self.input_font)
+        self.input_label.pack(side="left", padx=(10, 5), pady=10)
+        
+        if USE_CUSTOMTKINTER:
+            self.input_text = ctk.CTkTextbox(self.input_frame, font=self.input_font, height=100, wrap="word")
+        else:
+            self.input_text = tk.Text(self.input_frame, font=self.input_font, height=3, wrap=tk.WORD)
+        self.input_text.pack(side="left", fill="x", expand=True, padx=5, pady=10)
+        
+        # 创建按钮框架（仅在CustomTkinter中使用）
+        if USE_CUSTOMTKINTER:
+            self.button_frame = ctk.CTkFrame(self.input_frame, width=100, corner_radius=10)
+            self.button_frame.pack(side="right", padx=10, pady=10, fill="y")
+            self.send_button = ctk.CTkButton(self.button_frame, text="发送", command=self.send_message, font=self.input_font, width=80,
+                                           corner_radius=10, fg_color="#3B8ED0", hover_color="#3671A2")
+            self.send_button.pack(side="top", pady=(0, 5))
+            self.save_button = ctk.CTkButton(self.button_frame, text="保存记录", command=self.save_chat_records, font=self.input_font, width=80,
+                                           corner_radius=10, fg_color="#3B8ED0", hover_color="#3671A2")
+            self.save_button.pack(side="top")
+        else:
+            self.send_button = tk.Button(self.input_frame, text="发送", command=self.send_message, font=self.input_font)
+            self.send_button.pack(side="left", padx=5, pady=10)
+            self.save_button = tk.Button(self.input_frame, text="保存记录", command=self.save_chat_records, font=self.input_font)
+            self.save_button.pack(side="left", padx=5, pady=10)
 
         # 绑定快捷键
-        # 绑定快捷键
-        self.root.bind(f"<{self.send_shortcut}>", self.send_message)
-        self.root.bind(f"<{self.save_shortcut}>", lambda e: self.save_chat_records())
-        self.root.bind(f"<{self.new_chat_shortcut}>", lambda e: self.new_chat_record())
-        self.root.bind(f"<{self.open_shortcut}>", lambda e: self.open_chat_records())
-        # 添加键盘事件绑定
-        # 主窗口的快捷键绑定 - 只保留与主窗口相关的绑定
-        self.root.bind("<Control-Return>", self.send_message)  # 发送消息
-        self.root.bind("<Control-s>", self.save_chat_records)  # 保存聊天记录
-        self.root.bind("<Control-n>", lambda event: self.tree.add_topic("新聊天"))  # 新建聊天
-        #self.root.bind("<Control-l>", self.clear_chat)  # 清空聊天
-        self.root.bind("<Control-Key-comma>", lambda event: self.open_settings_dialog())  # 打开设置
+        self.root.bind(INPUT_SHORTCUTS['send_message'], self.send_message)  # 发送消息
+        self.root.bind(MAIN_SHORTCUTS['save_chat'], lambda e: self.save_chat_records())  # 保存聊天记录
+        self.root.bind(MAIN_SHORTCUTS['new_chat'], lambda e: self.new_chat_record())  # 新建聊天
+        self.root.bind(MAIN_SHORTCUTS['open_chat'], lambda e: self.open_chat_records())  # 打开聊天记录
+        self.root.bind(MAIN_SHORTCUTS['open_settings'], lambda event: self.open_settings_dialog())  # 打开设置
+        
+        # 绑定输入框的快捷键
+        self.input_text.bind(INPUT_SHORTCUTS['line_break'], self.insert_line_break)  # Shift+Enter换行
+        self.input_text.bind(INPUT_SHORTCUTS['select_all'], self.select_all_input)  # Ctrl+A全选
+        # 启用输入框的标准键盘快捷键
+        self.input_text.bind("<Control-z>", lambda event: self.input_text.edit_undo())  # Ctrl+Z撤销
+        self.input_text.bind("<Control-y>", lambda event: self.input_text.edit_redo())  # Ctrl+Y重做
+        self.input_text.bind("<Control-x>", lambda event: self.input_text.event_generate("<<Cut>>"))  # Ctrl+X剪切
+        self.input_text.bind("<Control-c>", lambda event: self.input_text.event_generate("<<Copy>>"))  # Ctrl+C复制
+        self.input_text.bind("<Control-v>", lambda event: self.input_text.event_generate("<<Paste>>"))  # Ctrl+V粘贴
+        # 修复Shift+方向键选择文本的问题
+        self.input_text.bind("<Shift-Left>", self.handle_shift_left)
+        self.input_text.bind("<Shift-Right>", self.handle_shift_right)
+        self.input_text.bind("<Shift-Up>", self.handle_shift_up)
+        self.input_text.bind("<Shift-Down>", self.handle_shift_down)
         
         # 移除下面这行代码，它导致了NameError错误
         # dialog.bind("<Control-s>", lambda event: save_settings())
@@ -174,10 +294,14 @@ class MainWindow:
         dialog = tk.Toplevel(self.root)
         dialog.title("设置")
         dialog.geometry("600x500")
+        dialog.minsize(500, 400)  # 设置最小尺寸
         dialog.resizable(True, True)  # 允许调整对话框大小
         
+        # 设置对话框字体大小，默认为20
+        dialog_font = (self.font[0], 20) if hasattr(self, 'font') else ('Microsoft YaHei UI', 20)
+        
         # 添加Ctrl+S快捷键绑定（必须放在dialog定义之后）
-        dialog.bind("<Control-s>", lambda event: save_settings())
+        dialog.bind(MAIN_SHORTCUTS['save_chat'], lambda event: self.save_settings())
         
         # 创建标签页控件
         tab_control = ttk.Notebook(dialog)
@@ -193,9 +317,40 @@ class MainWindow:
         tab_control.pack(expand=1, fill="both")
 
         # -------------------- 常规设置标签页 --------------------
+        # 为常规设置标签页添加滚动条
+        general_canvas = tk.Canvas(general_tab)
+        general_scrollbar = ttk.Scrollbar(general_tab, orient="vertical", command=general_canvas.yview)
+        general_scrollable_frame = ttk.Frame(general_canvas)
+        
+        general_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: general_canvas.configure(
+                scrollregion=general_canvas.bbox("all")
+            )
+        )
+        
+        general_canvas.create_window((0, 0), window=general_scrollable_frame, anchor="nw")
+        general_canvas.configure(yscrollcommand=general_scrollbar.set)
+        
+        # 添加鼠标滚轮支持
+        def _on_mousewheel(event):
+            general_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        general_canvas.bind("<MouseWheel>", _on_mousewheel)
+        general_scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        general_canvas.pack(side="left", fill="both", expand=True)
+        general_scrollbar.pack(side="right", fill="y")
+        
         # 添加字体设置区域
-        font_frame = ttk.LabelFrame(general_tab, text="字体设置")
+        font_frame = ttk.LabelFrame(general_scrollable_frame, text="字体设置")
         font_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
+        
+        # 统一字体大小设置（最高优先级）
+        ttk.Label(font_frame, text="统一字体大小 (最高优先级):").pack(anchor='w', padx=10, pady=5)
+        global_font_size_var = tk.IntVar(value=self.global_font_size)
+        global_font_size_spinbox = tk.Spinbox(font_frame, from_=8, to=72, textvariable=global_font_size_var, width=10)
+        global_font_size_spinbox.pack(anchor='w', padx=10, pady=5)
         
         # 聊天区域字体设置
         ttk.Label(font_frame, text="聊天区域字体:").pack(anchor='w', padx=10, pady=5)
@@ -218,6 +373,26 @@ class MainWindow:
         input_font_size_var = tk.IntVar(value=self.input_font[1])
         input_font_size_spinbox = tk.Spinbox(font_frame, from_=8, to=72, textvariable=input_font_size_var, width=10)
         input_font_size_spinbox.pack(anchor='w', padx=10, pady=5)
+        
+        # 按钮字体大小设置
+        ttk.Label(font_frame, text="按钮字体大小:").pack(anchor='w', padx=10, pady=5)
+        button_font_size_var = tk.IntVar(value=self.button_font_size)
+        button_font_size_spinbox = tk.Spinbox(font_frame, from_=8, to=72, textvariable=button_font_size_var, width=10)
+        button_font_size_spinbox.pack(anchor='w', padx=10, pady=5)
+        
+        # 按钮大小设置
+        ttk.Label(font_frame, text="按钮大小:").pack(anchor='w', padx=10, pady=5)
+        button_size_var = tk.IntVar(value=self.button_size)  # 默认按钮宽度
+        button_size_scale = ttk.Scale(font_frame, from_=50, to=200, variable=button_size_var, orient=tk.HORIZONTAL)
+        button_size_scale.pack(anchor='w', padx=10, pady=5, fill=tk.X)
+        button_size_label = ttk.Label(font_frame, textvariable=button_size_var)
+        button_size_label.pack(anchor='w', padx=10, pady=5)
+        
+        # 界面缩放比例设置
+        ttk.Label(font_frame, text="界面缩放比例:").pack(anchor='w', padx=10, pady=5)
+        scale_var = tk.DoubleVar(value=1.0)
+        scale_spinbox = tk.Spinbox(font_frame, from_=0.5, to=2.0, increment=0.1, textvariable=scale_var, width=10)
+        scale_spinbox.pack(anchor='w', padx=10, pady=5)
         
         # 自动跳转设置
         auto_switch_var = tk.BooleanVar(value=self.auto_switch)
@@ -245,12 +420,37 @@ class MainWindow:
         cb_clear_on_jump.pack(anchor='w', padx=10, pady=5)
 
         # -------------------- AI模型设置标签页 --------------------
+        # 为AI模型设置标签页添加滚动条
+        ai_canvas = tk.Canvas(ai_tab)
+        ai_scrollbar = ttk.Scrollbar(ai_tab, orient="vertical", command=ai_canvas.yview)
+        ai_scrollable_frame = ttk.Frame(ai_canvas)
+        
+        ai_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: ai_canvas.configure(
+                scrollregion=ai_canvas.bbox("all")
+            )
+        )
+        
+        ai_canvas.create_window((0, 0), window=ai_scrollable_frame, anchor="nw")
+        ai_canvas.configure(yscrollcommand=ai_scrollbar.set)
+        
+        # 添加鼠标滚轮支持
+        def _on_mousewheel_ai(event):
+            ai_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        ai_canvas.bind("<MouseWheel>", _on_mousewheel_ai)
+        ai_scrollable_frame.bind("<MouseWheel>", _on_mousewheel_ai)
+        
+        ai_canvas.pack(side="left", fill="both", expand=True)
+        ai_scrollbar.pack(side="right", fill="y")
+        
         # 模型选择区域
-        model_frame = ttk.LabelFrame(ai_tab, text="模型选择")
+        model_frame = ttk.LabelFrame(ai_scrollable_frame, text="模型选择")
         model_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
         
         # Ollama服务地址设置
-        url_frame = ttk.LabelFrame(ai_tab, text="Ollama服务设置")
+        url_frame = ttk.LabelFrame(ai_scrollable_frame, text="Ollama服务设置")
         url_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
         
         # 服务地址输入框 - 确保使用正确的base_url属性
@@ -281,18 +481,23 @@ class MainWindow:
         available_models = self.ai_model.get_available_models()
         if not available_models:
             ttk.Label(model_frame, text="未找到可用模型，请确保Ollama服务已启动").pack(anchor='w', padx=10, pady=5)
-        else:
-            # 创建模型选择下拉框
-            model_var = tk.StringVar(value=self.ai_model.model)
-            model_combobox = ttk.Combobox(model_frame, textvariable=model_var, values=available_models, state="readonly", width=30)
-            model_combobox.pack(anchor='w', padx=10, pady=5)
+            # 创建一个空的模型列表
+            available_models = []
+        
+        # 创建模型选择下拉框
+        model_var = tk.StringVar(value=self.ai_model.model)
+        model_combobox = ttk.Combobox(model_frame, textvariable=model_var, values=available_models, state="readonly", width=30)
+        model_combobox.pack(anchor='w', padx=10, pady=5)
         
         # 修改刷新模型按钮的实现
         def refresh_models():
-            self.ai_model.load_available_models()
+            success = self.ai_model.load_available_models()
             available_models = self.ai_model.get_available_models()
-            if available_models and 'model_combobox' in locals():
+            if available_models:
                 model_combobox['values'] = available_models
+                # 如果当前选择的模型不在列表中，设置为第一个模型
+                if model_var.get() not in available_models:
+                    model_var.set(available_models[0])
                 messagebox.showinfo("刷新成功", f"已成功刷新模型列表，找到 {len(available_models)} 个模型")
             else:
                 messagebox.showwarning("刷新失败", "未找到可用模型，请确保Ollama服务已启动")
@@ -312,8 +517,10 @@ class MainWindow:
                     messagebox.showinfo("添加成功", f"已成功添加模型: {model_name}")
                     # 刷新下拉列表
                     available_models = self.ai_model.get_available_models()
-                    if 'model_combobox' in locals():
-                        model_combobox['values'] = available_models
+                    model_combobox['values'] = available_models
+                    # 如果当前没有选择模型或选择的模型不在列表中，设置为新添加的模型
+                    if not model_var.get() or model_var.get() not in available_models:
+                        model_var.set(model_name)
                 else:
                     messagebox.showerror("添加失败", f"无法添加模型: {model_name}\n请检查模型名称是否正确或Ollama服务是否正常运行")
             else:
@@ -324,6 +531,10 @@ class MainWindow:
 
         refresh_button = ttk.Button(model_frame, text="刷新模型列表", command=refresh_models)
         refresh_button.pack(anchor='w', padx=10, pady=5)
+        
+        # 添加导入Ollama模型列表的功能说明
+        import_info_label = ttk.Label(model_frame, text="提示：可以通过命令行运行 'ollama list' 查看可用模型，然后手动添加到列表中", wraplength=400)
+        import_info_label.pack(anchor='w', padx=10, pady=5)
 
         # 保存设置按钮 - 完整的保存功能实现
         def save_settings():
@@ -334,11 +545,32 @@ class MainWindow:
             self.clear_on_jump = clear_on_jump_var.get()
             
             # 更新字体设置
-            self.chat_font = (chat_font_var.get(), chat_font_size_var.get())
-            self.input_font = (input_font_var.get(), input_font_size_var.get())
+            # 如果设置了统一字体大小，则使用统一设置
+            global_font_size = global_font_size_var.get()
+            if global_font_size > 0:  # 使用统一字体大小
+                self.chat_font = (chat_font_var.get(), global_font_size)
+                self.input_font = (input_font_var.get(), global_font_size)
+                button_font_size = global_font_size
+            else:  # 使用各自独立的字体大小
+                self.chat_font = (chat_font_var.get(), chat_font_size_var.get())
+                self.input_font = (input_font_var.get(), input_font_size_var.get())
+                button_font_size = button_font_size_var.get()
+
+            # 获取配置文件路径
+            if USE_APPDIRS:
+                app_data_dir = user_data_dir("TreeChat", "TreeChat")
+                config_path = os.path.join(app_data_dir, "settings.ini")
+                os.makedirs(app_data_dir, exist_ok=True)
+            else:
+                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "settings.ini")
+            
+            logger.info(f"保存配置到: {config_path}")
 
             config = configparser.ConfigParser()
-            config.read(os.path.join("config", "settings.ini"), encoding="utf-8")
+            # 读取现有配置（如果存在）
+            config.read(config_path, encoding="utf-8")
+            if not config.has_section('设置'):
+                config.add_section('设置')
             config.set('设置', 'auto_switch_to_new_node', str(self.auto_switch))
             config.set('设置', 'auto_save_chat', str(self.auto_save))
             config.set('设置', 'show_jump_alert', str(self.show_jump_alert))
@@ -352,39 +584,78 @@ class MainWindow:
             # 保存字体大小设置
             config.set('设置', 'chat_font_size', str(self.chat_font[1]))
             config.set('设置', 'input_font_size', str(self.input_font[1]))
+            config.set('设置', 'button_font_size', str(button_font_size))
+            config.set('设置', 'button_size', str(button_size_var.get()))
+            config.set('设置', 'global_font_size', str(global_font_size))
+            
+            # 保存界面缩放比例
+            config.set('设置', 'scale_factor', str(scale_var.get()))
 
             # 保存AI模型设置
             try:
-                selected_model = model_var.get() if 'model_var' in locals() else self.ai_model.model
-                config.set('设置', 'ai_model', selected_model)
-                if hasattr(self, 'ai_model'):
-                    self.ai_model.set_model(selected_model)
+                selected_model = model_var.get()
+                if selected_model:  # 确保模型名称不为空
+                    config.set('设置', 'ai_model', selected_model)
+                    if hasattr(self, 'ai_model'):
+                        self.ai_model.set_model(selected_model)
+                # 保存手动添加的模型列表
+                manual_models = [model for model in self.ai_model.get_available_models() if model != selected_model]
+                if manual_models:
+                    config.set('设置', 'manual_models', ','.join(manual_models))
+                else:
+                    config.set('设置', 'manual_models', '')
             except Exception as e:
+                logger.error(f"保存AI模型设置失败: {e}")
                 print(f"保存AI模型设置失败: {e}")
 
             # 保存Ollama服务地址
             config.set('设置', 'ollama_base_url', url_var.get())
 
-            with open(os.path.join("config", "settings.ini"), "w", encoding="utf-8") as configfile:
-                config.write(configfile)
+            try:
+                with open(config_path, "w", encoding="utf-8") as configfile:
+                    config.write(configfile)
+                logger.info("配置已成功保存")
+                messagebox.showinfo("设置已保存", "所有设置已成功保存")
+            except Exception as e:
+                logger.error(f"保存配置失败: {e}")
+                messagebox.showerror("保存失败", f"无法保存设置: {e}\n请检查程序是否有写入权限。")
 
             # 应用字体设置
             self.output_text.config(font=self.chat_font)
             self.input_label.config(font=self.input_font)
             self.input_text.config(font=self.input_font)
-            self.send_button.config(font=self.input_font)
-            self.save_button.config(font=self.input_font)
+            # 应用按钮字体和大小设置
+            button_font = (self.input_font[0], button_font_size)
+            button_width = button_size_var.get()
+            if USE_CUSTOMTKINTER:
+                self.send_button.configure(font=button_font, width=button_width)
+                self.save_button.configure(font=button_font, width=button_width)
+                # 更新设置按钮字体
+                self.settings_button.configure(font=(self.input_font[0], button_font_size))
+            else:
+                self.send_button.config(font=button_font, width=button_width//8)  # Tkinter按钮宽度单位不同
+                self.save_button.config(font=button_font, width=button_width//8)
+                # 更新设置按钮字体
+                self.settings_button.config(font=(self.input_font[0], button_font_size))
+            
+            # 应用界面缩放
+            scale_factor = scale_var.get()
+            self.root.geometry(f"{int(1200*scale_factor)}x{int(800*scale_factor)}")
 
-            dialog.destroy()
-            messagebox.showinfo("设置已保存", "所有设置已成功保存")
+        # 将save_settings方法保存为实例方法，以便外部调用
+        self.save_settings = save_settings
 
         # 创建按钮容器并将其放置在对话框底部
         button_frame = ttk.Frame(dialog)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         
+        # 添加关闭按钮
+        close_button = ttk.Button(button_frame, text="关闭", command=dialog.destroy)
+        close_button.pack(side=tk.RIGHT, padx=5)
+        
         # 创建保存设置按钮并放置在容器中
         save_button = ttk.Button(button_frame, text="保存设置", command=save_settings)
-        save_button.pack(fill=tk.X)
+        save_button.pack(side=tk.RIGHT, padx=5)
 
     def send_message(self, event=None):
         """
@@ -392,8 +663,8 @@ class MainWindow:
          - 如果输入以 "新主题:" 开头，则自动在当前节点下创建新节点，并根据设置自动切换及保存；
          - 否则视为普通聊天消息，发送后调用 AI 模型回复并保存记录。
         """
-        input_text = self.input_text.get().strip()
-        self.input_text.delete(0, tk.END)
+        input_text = self.input_text.get("1.0", tk.END).strip()
+        self.input_text.delete("1.0", tk.END)
         if input_text.startswith("新主题:"):
             topic = input_text[len("新主题:"):].strip()
             self.tree.add_topic(topic)
@@ -428,6 +699,53 @@ class MainWindow:
                 self.save_chat_records()
 
         return 'break'  # 防止事件继续传播
+
+    def insert_line_break(self, event=None):
+        """
+        在输入框中插入换行符
+        """
+        # 获取当前光标位置
+        cursor_pos = self.input_text.index(tk.INSERT)
+        # 在光标位置插入换行符
+        self.input_text.insert(cursor_pos, "\n")
+        # 移动光标到新插入的换行符之后
+        self.input_text.mark_set(tk.INSERT, f"{cursor_pos}+1c")
+        return 'break'  # 防止事件继续传播
+
+    def select_all_input(self, event=None):
+        """
+        全选输入框中的文本
+        """
+        self.input_text.tag_add(tk.SEL, "1.0", tk.END)
+        return 'break'  # 防止事件继续传播
+
+    def handle_shift_left(self, event=None):
+        """
+        处理Shift+Left键事件
+        """
+        self.input_text.event_generate("<Shift-Left>")
+        return 'break'
+
+    def handle_shift_right(self, event=None):
+        """
+        处理Shift+Right键事件
+        """
+        self.input_text.event_generate("<Shift-Right>")
+        return 'break'
+
+    def handle_shift_up(self, event=None):
+        """
+        处理Shift+Up键事件
+        """
+        self.input_text.event_generate("<Shift-Up>")
+        return 'break'
+
+    def handle_shift_down(self, event=None):
+        """
+        处理Shift+Down键事件
+        """
+        self.input_text.event_generate("<Shift-Down>")
+        return 'break'
 
     def update_tree_display(self):
         """
@@ -600,20 +918,24 @@ class MainWindow:
         else:
             self.output_text.insert(tk.END, "系统: 当前节点暂无聊天记录。\n")
 
+    def serialize_node(self, node):
+        """
+        序列化树节点为字典格式
+        """
+        return {
+            'id': node.id,
+            'topic': node.topic,
+            'chats': node.chats,
+            'children': [self.serialize_node(child) for child in node.children]
+        }
+
     def save_chat_records(self):
         """
         将整个树状聊天记录（包括节点结构及所有节点聊天内容）序列化为 JSON，
         固定保存在"chat_all_records.json"文件中，存放于默认记录文件夹内。
         若 show_save_alert 开启，则在聊天区域提示保存成功。
         """
-        def serialize_node(node):
-            return {
-                'id': node.id,
-                'topic': node.topic,
-                'chats': node.chats,
-                'children': [serialize_node(child) for child in node.children]
-            }
-        tree_dict = serialize_node(self.tree.root)
+        tree_dict = self.serialize_node(self.tree.root)
         file_name = "chat_all_records.json"
         file_path = os.path.join(self.records_folder, file_name)
         try:
@@ -657,15 +979,8 @@ class MainWindow:
         """
         file_path = filedialog.asksaveasfilename(title="另存为", defaultextension=".json", filetypes=[("JSON 文件", "*.json")])
         if file_path:
-            def serialize_node(node):
-                return {
-                    'id': node.id,
-                    'topic': node.topic,
-                    'chats': node.chats,
-                    'children': [serialize_node(child) for child in node.children]
-                }
             try:
-                tree_dict = serialize_node(self.tree.root)
+                tree_dict = self.serialize_node(self.tree.root)
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(tree_dict, f, ensure_ascii=False, indent=4)
                 self.output_text.insert(tk.END, f"系统: 聊天记录已另存为 {file_path}\n")
@@ -710,9 +1025,20 @@ class MainWindow:
 
     def load_ai_model_settings(self):
         """从配置文件加载AI模型设置"""
+        # 获取配置文件路径
+        if USE_APPDIRS:
+            # 使用用户数据目录存储配置
+            app_data_dir = user_data_dir("TreeChat", "TreeChat")
+            config_path = os.path.join(app_data_dir, "settings.ini")
+        else:
+            # 使用程序目录中的配置文件
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "settings.ini")
+        
+        logger.info(f"加载AI模型设置，配置文件路径: {config_path}")
+        
         config = configparser.ConfigParser()
         try:
-            config.read(os.path.join("config", "settings.ini"), encoding="utf-8")
+            config.read(config_path, encoding="utf-8")
             
             # 首先加载服务地址
             if config.has_option('设置', 'ollama_base_url'):
@@ -742,8 +1068,21 @@ class MainWindow:
                     # 尝试将模型添加到可用列表
                     if model_name not in self.ai_model.available_models:
                         self.ai_model.available_models.append(model_name)
+                        
+            # 加载手动添加的模型列表（如果存在）
+            if config.has_option('设置', 'manual_models'):
+                manual_models_str = config.get('设置', 'manual_models')
+                if manual_models_str:
+                    manual_models = manual_models_str.split(',')
+                    for model in manual_models:
+                        model = model.strip()
+                        if model and model not in self.ai_model.available_models:
+                            self.ai_model.available_models.append(model)
         except Exception as e:
             logger.error(f"加载AI模型设置失败: {str(e)}")
+            # 使用默认设置
+            self.ai_model.set_model("deepseek-r1:8b  gemma3n:e4b")  # 使用用户实际拥有的模型
+            self.ai_model.set_base_url("http://localhost:11434")
             # 使用默认设置
             self.ai_model.set_model("gemma3n:e4b")  # 使用用户实际拥有的模型
             self.ai_model.set_base_url("http://localhost:11434")

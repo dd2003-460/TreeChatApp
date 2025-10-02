@@ -1,6 +1,11 @@
 import uuid
 
 class TreeNode:
+    """
+    树节点类，用于表示聊天记录的层次结构
+    
+    每个节点包含一个主题、唯一的ID、子节点列表和聊天记录
+    """
     def __init__(self, topic):
         """
         初始化一个新的树节点
@@ -51,6 +56,11 @@ class TreeNode:
         return ret
 
 class Tree:
+    """
+    树结构类，用于管理聊天记录的层次结构
+    
+    包含一个根节点和当前活动节点的引用
+    """
     def __init__(self):
         """
         初始化树，设置根节点为"会话根节点"

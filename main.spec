@@ -1,12 +1,31 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# 添加数据文件，确保配置文件和记录文件夹被包含
+import os
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=[
+        ('config', 'config'),
+        ('records', 'records')
+    ],
+    hiddenimports=[
+        'collections.abc',
+        'configparser',
+        'json',
+        'os',
+        'tkinter',
+        'tkinter.scrolledtext',
+        'tkinter.ttk',
+        'tkinter.simpledialog',
+        'tkinter.filedialog',
+        'tkinter.messagebox',
+        'logging',
+        'time',
+        'appdirs'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
